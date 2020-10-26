@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:epap/timezone.dart';
 
 pd(BuildContext context) {}
 
@@ -35,8 +38,8 @@ class DatePickerState extends State<DatePicker> {
     time = TimeOfDay.now();
     var androidInitialize = new AndroidInitializationSettings('app_icon');
     var iOSinitialize = new IOSInitializationSettings();
-    var initilizationsSettings =
-        new InitializationSettings(androidInitialize, iOSinitialize);
+    var initilizationsSettings = new InitializationSettings(
+        android: androidInitialize, iOS: iOSinitialize);
     fltrNotification.initialize(initilizationsSettings,
         onSelectNotification: notificationSelected);
   }
@@ -44,18 +47,26 @@ class DatePickerState extends State<DatePicker> {
   Future _sNotification(DateTime scheduledTime, int id) async {
     var androidDetails = new AndroidNotificationDetails(
         "1", "Epap", "EpapNotificationChannel",
-        importance: Importance.Max);
+        importance: Importance.max);
     var iOSDetails = new IOSNotificationDetails();
     var generalNotificationDetails =
-        new NotificationDetails(androidDetails, iOSDetails);
+        new NotificationDetails(android: androidDetails, iOS: iOSDetails);
 
-    // await fltrNotification.show(
-    //     0, "Task", "You created a Task", generalNotificationDetails,
-    //     payload: "Task");
-    // var scheduledTime = DateTime.now().add(Duration(seconds: 10));
-    // scheduledTime.add()
-    fltrNotification.schedule(
-        id, "Epap", "Reminder", scheduledTime, generalNotificationDetails);
+    final timeZone = TimeZone();
+
+    // The device's timezone.
+    String timeZoneName = await timeZone.getTimeZoneName();
+
+    // Find the 'current location'
+    final location = await timeZone.getLocation(timeZoneName);
+
+    final st = tz.TZDateTime.from(scheduledTime, location);
+
+    fltrNotification.zonedSchedule(
+        id, "Epap", "Reminder", st, generalNotificationDetails,
+        androidAllowWhileIdle: true,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime);
   }
 
   Future cancelAllNotifications() async {
@@ -70,6 +81,8 @@ class DatePickerState extends State<DatePicker> {
     alarms.removeAt(id);
     setState(() {});
   }
+
+  bool _lights = true;
 
   @override
   Widget build(BuildContext context) {
@@ -95,29 +108,51 @@ class DatePickerState extends State<DatePicker> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           Expanded(
-                              child: ListTile(
-                            title: Text(
-                                '${alarms[index][0].day} ${monthsInYear[alarms[index][0].month]} ${alarms[index][0].year} , ${alarms[index][1].hourOfPeriod}:${getminute(alarms[index][1])} ${getm(alarms[index][1])}'),
-                          )),
-                          IconButton(
-                            icon: Icon(Icons.edit),
-                            onPressed: () {
-                              if (alarms.isEmpty) {
-                                index = null;
-                              }
-                              editAlarm(context, index);
-                            },
+                            child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: ListTile(
+                                        title: Text(
+                                      '${alarms[index][0].day} ${monthsInYear[alarms[index][0].month]} ${alarms[index][0].year} , ${alarms[index][1].hourOfPeriod}:${getminute(alarms[index][1])} ${getm(alarms[index][1])}',
+                                      style: TextStyle(
+                                        fontSize: 18.0,
+                                      ),
+                                    )),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.edit),
+                                    onPressed: () {
+                                      if (alarms.isEmpty) {
+                                        index = null;
+                                      }
+                                      editAlarm(context, index);
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.cancel),
+                                    color: Colors.red,
+                                    onPressed: () {
+                                      cancelNotification(index);
+                                    },
+                                  ),
+                                  Switch(
+                                    value: _lights,
+                                    onChanged: (bool value) {
+                                      setState(() {
+                                        _lights = value;
+                                      });
+                                    },
+                                  )
+                                ]),
                           ),
-                          IconButton(
-                            icon: Icon(Icons.cancel),
-                            color: Colors.red,
-                            onPressed: () {
-                              cancelNotification(index);
-                            },
-                          )
                         ],
                       ),
-                    )
+                    ),
+                    const Divider(
+                      height: 20,
+                      thickness: 3,
+                    ),
                   ]),
                 );
               }),
@@ -171,7 +206,7 @@ class DatePickerState extends State<DatePicker> {
     );
   }
 
-  picktime(BuildContext context, int index) async {
+  Future picktime(BuildContext context, int index) async {
     TimeOfDay t = await showTimePicker(
       context: context,
       initialTime: (index != null) ? alarms[index][1] : TimeOfDay.now(),
@@ -180,16 +215,17 @@ class DatePickerState extends State<DatePicker> {
       int l = alarms.length;
       time = t;
       index = l;
-      DateTime st =
-          dt.add(Duration(hours: t.hour, minutes: t.minute, seconds: 10));
+      DateTime st = dt.add(Duration(hours: t.hour, minutes: t.minute));
       setState(() {
-        _sNotification(st, index);
-        alarms.insert(l, [dt, time]);
+        if (st.isAfter(DateTime.now())) {
+          _sNotification(st, index);
+          alarms.insert(l, [dt, time]);
+        }
       });
     }
   }
 
-  pickDate(BuildContext context, int index) async {
+  Future pickDate(BuildContext context, int index) async {
     DateTime date = await showDatePicker(
       context: context,
       initialDate: (index != null) ? alarms[index][0] : DateTime.now(),
