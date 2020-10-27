@@ -70,6 +70,7 @@ class DatePickerState extends State<DatePicker> {
             UILocalNotificationDateInterpretation.absoluteTime);
     setState(() {
       alarms[id][2] = st;
+      alarms[id][3] = counter;
       counter = counter + 1;
     });
   }
@@ -82,11 +83,11 @@ class DatePickerState extends State<DatePicker> {
     });
   }
 
-  Future cancelNotification(int id) async {
+  Future cancelNotification(int id, int index) async {
     await fltrNotification.cancel(id);
     setState(() {
-      alarms.removeAt(id);
-      reminders = generateItems(alarms);
+      alarms.removeAt(index);
+      reminders.removeAt(index);
     });
   }
 
@@ -212,9 +213,27 @@ class DatePickerState extends State<DatePicker> {
                               icon: Icon(Icons.cancel),
                               color: Colors.red,
                               onPressed: () {
-                                cancelNotification(reminders.indexOf(item));
+                                cancelNotification(
+                                    alarms[reminders.indexOf(item)][3],
+                                    reminders.indexOf(item));
                               },
                             ),
+                            Switch(
+                              value: item.toggle,
+                              onChanged: (value) {
+                                setState(() {
+                                  item.toggle = !item.toggle;
+                                  if (!value) {
+                                    fltrNotification.cancel(item.id);
+                                  }
+                                  if (value) {
+                                    _sNotification(
+                                        alarms[reminders.indexOf(item)][2],
+                                        reminders.indexOf(item));
+                                  }
+                                });
+                              },
+                            )
                           ],
                         ),
                         Row(
@@ -345,7 +364,7 @@ class DatePickerState extends State<DatePicker> {
       setState(() {
         if (st.isAfter(DateTime.now())) {
           _sNotification(st, index);
-          alarms.insert(l, [dt, time, false]);
+          alarms.insert(l, [dt, time, false, counter]);
           reminders = generateItems(alarms);
         }
       });
@@ -385,7 +404,7 @@ class DatePickerState extends State<DatePicker> {
     DateTime newDate = await showDatePicker(
       context: context,
       initialDate: alarms[index][0],
-      firstDate: DateTime(DateTime.now().year - 5),
+      firstDate: DateTime.now(),
       lastDate: DateTime(DateTime.now().year + 5),
     );
     if (newDate != null) {
@@ -398,9 +417,9 @@ class DatePickerState extends State<DatePicker> {
 
         if (newdateTime[0] != alarms[index][0] ||
             newdateTime[1] != alarms[index][1]) {
-          DateTime nst = dt.add(Duration(
-              hours: newtime.hour, minutes: newtime.minute, seconds: 10));
-          await fltrNotification.cancel(index);
+          DateTime nst =
+              dt.add(Duration(hours: newtime.hour, minutes: newtime.minute));
+          await fltrNotification.cancel(alarms[index][3]);
           await _sNotification(nst, index);
           setState(() {
             alarms[index][0] = newdateTime[0];
@@ -425,6 +444,8 @@ class Item {
     this.weekly = false,
     this.dailyColor = Colors.black,
     this.weeklyColor = Colors.black,
+    this.toggle = true,
+    this.id,
     // this.monthlyColor = Colors.black,
   });
 
@@ -433,8 +454,10 @@ class Item {
   bool isExpanded;
   bool daily;
   bool weekly;
+  bool toggle;
   int did;
   int wid;
+  int id;
   // bool monthly;
   Color dailyColor;
   Color weeklyColor;
@@ -444,6 +467,7 @@ class Item {
 List<Item> generateItems(List reminders) {
   return List.generate(reminders.length, (int index) {
     return Item(
+      id: reminders[index][3],
       headerValue: 'Reminder ${index + 1}',
       expandedValue:
           '${reminders[index][0].day} ${DatePickerState().monthsInYear[reminders[index][0].month]} ${reminders[index][0].year} , ${reminders[index][1].hourOfPeriod}:${DatePickerState().getminute(reminders[index][1])} ${DatePickerState().getm(reminders[index][1])}',
