@@ -4,8 +4,6 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:epap/timezone.dart';
 
-pd(BuildContext context) {}
-
 class DatePicker extends StatefulWidget {
   @override
   DatePickerState createState() => DatePickerState();
@@ -14,7 +12,7 @@ class DatePicker extends StatefulWidget {
 class DatePickerState extends State<DatePicker> {
   DateTime dt;
   TimeOfDay time;
-  List alarms = [];
+
   Map<int, String> monthsInYear = {
     1: "January",
     2: "February",
@@ -31,6 +29,10 @@ class DatePickerState extends State<DatePicker> {
   };
   FlutterLocalNotificationsPlugin fltrNotification =
       new FlutterLocalNotificationsPlugin();
+
+  List alarms = [];
+  int counter = 0;
+  List<Item> reminders;
   @override
   void initState() {
     super.initState();
@@ -61,28 +63,104 @@ class DatePickerState extends State<DatePicker> {
     final location = await timeZone.getLocation(timeZoneName);
 
     final st = tz.TZDateTime.from(scheduledTime, location);
-
     fltrNotification.zonedSchedule(
-        id, "Epap", "Reminder", st, generalNotificationDetails,
+        counter, "Epap", "Reminder", st, generalNotificationDetails,
         androidAllowWhileIdle: true,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime);
+    setState(() {
+      alarms[id][2] = st;
+      counter = counter + 1;
+    });
   }
 
   Future cancelAllNotifications() async {
     await fltrNotification.cancelAll();
     setState(() {
       alarms = [];
+      reminders = generateItems(alarms);
     });
   }
 
   Future cancelNotification(int id) async {
     await fltrNotification.cancel(id);
-    alarms.removeAt(id);
-    setState(() {});
+    setState(() {
+      alarms.removeAt(id);
+      reminders = generateItems(alarms);
+    });
   }
 
-  bool _lights = true;
+  tz.TZDateTime _nextInstanceOf(int index) {
+    final now = alarms[index][2];
+    tz.TZDateTime scheduledDate =
+        tz.TZDateTime(tz.local, now.year, now.month, now.day, 10);
+    if (scheduledDate.isBefore(now)) {
+      scheduledDate = scheduledDate.add(const Duration(days: 1));
+    }
+    return scheduledDate;
+  }
+
+  Future<void> _scheduleDailyNotification(int index) async {
+    await fltrNotification.zonedSchedule(
+        counter,
+        'Daily Notification',
+        'Daily Reminder',
+        _nextInstanceOf(index),
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'index',
+            'Daily notification',
+            'Daily Reminder',
+          ),
+        ),
+        androidAllowWhileIdle: true,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time);
+
+    setState(() {
+      counter = counter + 1;
+    });
+  }
+
+  Future<void> _scheduleWeeklyNotification(int index) async {
+    await fltrNotification.zonedSchedule(
+        counter,
+        'Weekly Notification',
+        'Weekly Reminder',
+        _nextInstanceOf(index),
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+              'index', 'Weekly notification', 'Weekly Reminder'),
+        ),
+        androidAllowWhileIdle: true,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime);
+    setState(() {
+      counter = counter + 1;
+    });
+  }
+
+  // Future<void> _scheduleMonthlyNotification() async {
+  //   await fltrNotification.zonedSchedule(
+  //       0,
+  //       'Monthly scheduled notification title',
+  //       'Monthly scheduled notification body',
+  //       _nextInstanceOf(),
+  //       const NotificationDetails(
+  //         android: AndroidNotificationDetails(
+  //             'Monthly notification channel id',
+  //             'Monthly notification channel name',
+  //             'Monthly notificationdescription'),
+  //       ),
+  //       androidAllowWhileIdle: true,
+  //       uiLocalNotificationDateInterpretation:
+  //           UILocalNotificationDateInterpretation.absoluteTime,
+  //       matchDateTimeComponents: DateTimeComponents.);
+  // }
+
+  // bool _lights = true;
 
   @override
   Widget build(BuildContext context) {
@@ -94,70 +172,118 @@ class DatePickerState extends State<DatePicker> {
               cancelAllNotifications();
             })
       ]),
-      body: Column(children: [
-        Expanded(
-          child: ListView.builder(
-              // padding: const EdgeInsets.all(8),
-              itemCount: alarms.length,
-              itemBuilder: (BuildContext context, int index) {
-                return Container(
-                  child: Column(children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 5.0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Expanded(
-                            child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: ListTile(
-                                        title: Text(
-                                      '${alarms[index][0].day} ${monthsInYear[alarms[index][0].month]} ${alarms[index][0].year} , ${alarms[index][1].hourOfPeriod}:${getminute(alarms[index][1])} ${getm(alarms[index][1])}',
-                                      style: TextStyle(
-                                        fontSize: 18.0,
+      body: ListView(
+        children: <Widget>[
+          ExpansionPanelList(
+            expansionCallback: (int index, bool isExpanded) {
+              setState(() {
+                reminders[index].isExpanded = !isExpanded;
+              });
+            },
+            children: reminders?.map<ExpansionPanel>((Item item) {
+                  return ExpansionPanel(
+                      canTapOnHeader: true,
+                      headerBuilder: (context, isExpanded) {
+                        return ListTile(
+                          title: Text(item.headerValue),
+                        );
+                      },
+                      body: Column(children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: ListTile(
+                                  title: Text(
+                                item.expandedValue,
+                                style: TextStyle(
+                                  fontSize: 18.0,
+                                ),
+                              )),
+                            ),
+                            IconButton(
+                                icon: Icon(
+                                  Icons.edit,
+                                ),
+                                onPressed: () {
+                                  editAlarm(context, reminders.indexOf(item));
+                                }),
+                            IconButton(
+                              icon: Icon(Icons.cancel),
+                              color: Colors.red,
+                              onPressed: () {
+                                cancelNotification(reminders.indexOf(item));
+                              },
+                            ),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            Expanded(
+                                child: Padding(
+                                    padding: EdgeInsets.fromLTRB(
+                                        2.0, 0.0, 0.0, 20.0),
+                                    child: Column(children: [
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.alarm,
+                                          color: item.dailyColor,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            if (item.daily) {
+                                              fltrNotification.cancel(item.did);
+                                              item.dailyColor = Colors.black;
+                                              item.daily = false;
+                                            } else {
+                                              item.did = counter;
+                                              _scheduleDailyNotification(
+                                                  reminders.indexOf(item));
+                                              item.dailyColor = Colors.red;
+                                              item.daily = true;
+                                            }
+                                          });
+                                        },
                                       ),
-                                    )),
-                                  ),
-                                  IconButton(
-                                    icon: Icon(Icons.edit),
-                                    onPressed: () {
-                                      if (alarms.isEmpty) {
-                                        index = null;
-                                      }
-                                      editAlarm(context, index);
-                                    },
-                                  ),
-                                  IconButton(
-                                    icon: Icon(Icons.cancel),
-                                    color: Colors.red,
-                                    onPressed: () {
-                                      cancelNotification(index);
-                                    },
-                                  ),
-                                  Switch(
-                                    value: _lights,
-                                    onChanged: (bool value) {
-                                      setState(() {
-                                        _lights = value;
-                                      });
-                                    },
-                                  )
-                                ]),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(
-                      height: 20,
-                      thickness: 3,
-                    ),
-                  ]),
-                );
-              }),
-        ),
-      ]),
+                                      Text('Daily Reminder')
+                                    ]))),
+                            Expanded(
+                                child: Padding(
+                                    padding: EdgeInsets.fromLTRB(
+                                        2.0, 0.0, 0.0, 20.0),
+                                    child: Column(children: [
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.alarm,
+                                          color: item.weeklyColor,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            if (item.weekly) {
+                                              fltrNotification.cancel(item.wid);
+                                              item.weeklyColor = Colors.black;
+                                              item.weekly = false;
+                                            } else {
+                                              item.wid = counter;
+                                              _scheduleWeeklyNotification(
+                                                  reminders.indexOf(item));
+                                              item.weeklyColor = Colors.red;
+                                              item.weekly = true;
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      Text('Weekly'),
+                                    ]))),
+                          ],
+                        )
+                      ]),
+                      isExpanded: item.isExpanded);
+                })?.toList() ??
+                [],
+          ),
+        ],
+      ),
       drawer: Drawer(
         child: ListView(
           // Important: Remove any padding from the ListView.
@@ -219,7 +345,8 @@ class DatePickerState extends State<DatePicker> {
       setState(() {
         if (st.isAfter(DateTime.now())) {
           _sNotification(st, index);
-          alarms.insert(l, [dt, time]);
+          alarms.insert(l, [dt, time, false]);
+          reminders = generateItems(alarms);
         }
       });
     }
@@ -267,18 +394,59 @@ class DatePickerState extends State<DatePicker> {
         initialTime: alarms[index][1],
       );
       if (newtime != null) {
-        List newdateTime = [newDate, newtime];
+        List newdateTime = [newDate, newtime, false];
 
         if (newdateTime[0] != alarms[index][0] ||
             newdateTime[1] != alarms[index][1]) {
-          alarms[index] = newdateTime;
           DateTime nst = dt.add(Duration(
               hours: newtime.hour, minutes: newtime.minute, seconds: 10));
           await fltrNotification.cancel(index);
           await _sNotification(nst, index);
-          setState(() {});
+          setState(() {
+            alarms[index][0] = newdateTime[0];
+            alarms[index][1] = newdateTime[1];
+            reminders = generateItems(alarms);
+          });
         }
       }
     }
   }
+}
+
+class Item {
+  Item({
+    this.expandedValue,
+    this.headerValue,
+    this.isExpanded = false,
+    this.daily = false,
+    this.did = 0,
+    this.wid = 0,
+    // this.monthly = false,
+    this.weekly = false,
+    this.dailyColor = Colors.black,
+    this.weeklyColor = Colors.black,
+    // this.monthlyColor = Colors.black,
+  });
+
+  String expandedValue;
+  String headerValue;
+  bool isExpanded;
+  bool daily;
+  bool weekly;
+  int did;
+  int wid;
+  // bool monthly;
+  Color dailyColor;
+  Color weeklyColor;
+  // Color monthlyColor;
+}
+
+List<Item> generateItems(List reminders) {
+  return List.generate(reminders.length, (int index) {
+    return Item(
+      headerValue: 'Reminder ${index + 1}',
+      expandedValue:
+          '${reminders[index][0].day} ${DatePickerState().monthsInYear[reminders[index][0].month]} ${reminders[index][0].year} , ${reminders[index][1].hourOfPeriod}:${DatePickerState().getminute(reminders[index][1])} ${DatePickerState().getm(reminders[index][1])}',
+    );
+  });
 }
