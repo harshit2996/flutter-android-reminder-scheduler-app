@@ -5,6 +5,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:epap/timezone.dart';
 
 class DatePicker extends StatefulWidget {
+  DatePicker({Key key}) : super(key: key);
   @override
   DatePickerState createState() => DatePickerState();
 }
@@ -12,7 +13,7 @@ class DatePicker extends StatefulWidget {
 class DatePickerState extends State<DatePicker> {
   DateTime dt;
   TimeOfDay time;
-
+  final _formKey = GlobalKey<FormState>();
   Map<int, String> monthsInYear = {
     1: "January",
     2: "February",
@@ -33,6 +34,7 @@ class DatePickerState extends State<DatePicker> {
   List alarms = [];
   int counter = 0;
   List<Item> reminders;
+  String reminder;
   @override
   void initState() {
     super.initState();
@@ -64,8 +66,10 @@ class DatePickerState extends State<DatePicker> {
 
     final st = tz.TZDateTime.from(scheduledTime, location);
     fltrNotification.zonedSchedule(
-        counter, "Epap", "Reminder", st, generalNotificationDetails,
+        counter, "Epap", alarms[id][4], st, generalNotificationDetails,
         androidAllowWhileIdle: true,
+        payload:
+            '${alarms[id][4]} at ${alarms[id][1].hourOfPeriod}:${DatePickerState().getminute(alarms[id][1])} ${DatePickerState().getm(alarms[id][1])}',
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime);
     setState(() {
@@ -143,26 +147,6 @@ class DatePickerState extends State<DatePicker> {
     });
   }
 
-  // Future<void> _scheduleMonthlyNotification() async {
-  //   await fltrNotification.zonedSchedule(
-  //       0,
-  //       'Monthly scheduled notification title',
-  //       'Monthly scheduled notification body',
-  //       _nextInstanceOf(),
-  //       const NotificationDetails(
-  //         android: AndroidNotificationDetails(
-  //             'Monthly notification channel id',
-  //             'Monthly notification channel name',
-  //             'Monthly notificationdescription'),
-  //       ),
-  //       androidAllowWhileIdle: true,
-  //       uiLocalNotificationDateInterpretation:
-  //           UILocalNotificationDateInterpretation.absoluteTime,
-  //       matchDateTimeComponents: DateTimeComponents.);
-  // }
-
-  // bool _lights = true;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -185,9 +169,29 @@ class DatePickerState extends State<DatePicker> {
                   return ExpansionPanel(
                       canTapOnHeader: true,
                       headerBuilder: (context, isExpanded) {
-                        return ListTile(
-                          title: Text(item.headerValue),
-                        );
+                        return Row(children: [
+                          Expanded(
+                              child: ListTile(
+                            title: Text(item.headerValue),
+                          )),
+                          // IconButton(icon: Icon(Icons.edit), onPressed: null),
+                          Switch(
+                            value: item.toggle,
+                            onChanged: (value) {
+                              setState(() {
+                                item.toggle = !item.toggle;
+                                if (!value) {
+                                  fltrNotification.cancel(item.id);
+                                }
+                                if (value) {
+                                  _sNotification(
+                                      alarms[reminders.indexOf(item)][2],
+                                      reminders.indexOf(item));
+                                }
+                              });
+                            },
+                          )
+                        ]);
                       },
                       body: Column(children: [
                         Row(
@@ -206,11 +210,28 @@ class DatePickerState extends State<DatePicker> {
                                 icon: Icon(
                                   Icons.edit,
                                 ),
+                                color: Colors.purple[900],
                                 onPressed: () {
-                                  editAlarm(context, reminders.indexOf(item));
+                                  editReminder(reminders.indexOf(item));
                                 }),
                             IconButton(
-                              icon: Icon(Icons.cancel),
+                                color: Colors.purple[900],
+                                icon: Icon(
+                                  Icons.event,
+                                ),
+                                onPressed: () {
+                                  editDate(context, reminders.indexOf(item));
+                                }),
+                            IconButton(
+                                color: Colors.purple[900],
+                                icon: Icon(
+                                  Icons.access_time,
+                                ),
+                                onPressed: () {
+                                  editTime(context, reminders.indexOf(item));
+                                }),
+                            IconButton(
+                              icon: Icon(Icons.delete),
                               color: Colors.red,
                               onPressed: () {
                                 cancelNotification(
@@ -218,22 +239,6 @@ class DatePickerState extends State<DatePicker> {
                                     reminders.indexOf(item));
                               },
                             ),
-                            Switch(
-                              value: item.toggle,
-                              onChanged: (value) {
-                                setState(() {
-                                  item.toggle = !item.toggle;
-                                  if (!value) {
-                                    fltrNotification.cancel(item.id);
-                                  }
-                                  if (value) {
-                                    _sNotification(
-                                        alarms[reminders.indexOf(item)][2],
-                                        reminders.indexOf(item));
-                                  }
-                                });
-                              },
-                            )
                           ],
                         ),
                         Row(
@@ -361,10 +366,11 @@ class DatePickerState extends State<DatePicker> {
       time = t;
       index = l;
       DateTime st = dt.add(Duration(hours: t.hour, minutes: t.minute));
+      await setReminder();
       setState(() {
         if (st.isAfter(DateTime.now())) {
           _sNotification(st, index);
-          alarms.insert(l, [dt, time, false, counter]);
+          alarms.insert(l, [dt, time, false, counter, reminder]);
           reminders = generateItems(alarms);
         }
       });
@@ -400,6 +406,95 @@ class DatePickerState extends State<DatePicker> {
       return "pm";
   }
 
+  setReminder() async {
+    await showDialog(
+      context: context,
+      builder: (context) => SimpleDialog(children: [
+        Container(
+            padding: EdgeInsets.all(10.0),
+            child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    TextFormField(
+                      autovalidateMode: AutovalidateMode.disabled,
+                      validator: (value) => (value == "")
+                          ? "Please Enter Reminder Details"
+                          : null,
+                      onSaved: (input) => reminder = input,
+                      decoration: InputDecoration(
+                          labelText: 'Enter Reminder Details',
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 10.0, vertical: 10.0),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10.0))),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        ElevatedButton(
+                            onPressed: () {
+                              if (_formKey.currentState.validate()) {
+                                _formKey.currentState.save();
+                                Navigator.pop(context, reminder);
+                              }
+                            },
+                            child: Text('Submit'))
+                      ],
+                    )
+                  ],
+                ))),
+      ]),
+    );
+  }
+
+  editDate(BuildContext context, int index) async {
+    DateTime newDate = await showDatePicker(
+      context: context,
+      initialDate: alarms[index][0],
+      firstDate: DateTime.now(),
+      lastDate: DateTime(DateTime.now().year + 5),
+    );
+    if (newDate != null) {
+      List newdateTime = [newDate, alarms[index][1], false];
+      if (newdateTime[0] != alarms[index][0] ||
+          newdateTime[1] != alarms[index][1]) {
+        DateTime nst = dt.add(Duration(
+            hours: alarms[index][1].hour, minutes: alarms[index][1].minute));
+        await fltrNotification.cancel(alarms[index][3]);
+        await _sNotification(nst, index);
+        setState(() {
+          alarms[index][0] = newdateTime[0];
+          alarms[index][1] = newdateTime[1];
+          reminders = generateItems(alarms);
+        });
+      }
+    }
+  }
+
+  editTime(BuildContext context, int index) async {
+    TimeOfDay newtime = await showTimePicker(
+      context: context,
+      initialTime: alarms[index][1],
+    );
+    if (newtime != null) {
+      List newdateTime = [alarms[index][0], newtime, false];
+
+      if (newdateTime[0] != alarms[index][0] ||
+          newdateTime[1] != alarms[index][1]) {
+        DateTime nst = newdateTime[0]
+            .add(Duration(hours: newtime.hour, minutes: newtime.minute));
+        await fltrNotification.cancel(alarms[index][3]);
+        await _sNotification(nst, index);
+        setState(() {
+          alarms[index][0] = newdateTime[0];
+          alarms[index][1] = newdateTime[1];
+          reminders = generateItems(alarms);
+        });
+      }
+    }
+  }
+
   editAlarm(BuildContext context, int index) async {
     DateTime newDate = await showDatePicker(
       context: context,
@@ -429,6 +524,14 @@ class DatePickerState extends State<DatePicker> {
         }
       }
     }
+  }
+
+  editReminder(int index) async {
+    await setReminder();
+    alarms[index][4] = reminder;
+    setState(() {
+      reminders = generateItems(alarms);
+    });
   }
 }
 
@@ -468,7 +571,7 @@ List<Item> generateItems(List reminders) {
   return List.generate(reminders.length, (int index) {
     return Item(
       id: reminders[index][3],
-      headerValue: 'Reminder ${index + 1}',
+      headerValue: '${reminders[index][4]}',
       expandedValue:
           '${reminders[index][0].day} ${DatePickerState().monthsInYear[reminders[index][0].month]} ${reminders[index][0].year} , ${reminders[index][1].hourOfPeriod}:${DatePickerState().getminute(reminders[index][1])} ${DatePickerState().getm(reminders[index][1])}',
     );
