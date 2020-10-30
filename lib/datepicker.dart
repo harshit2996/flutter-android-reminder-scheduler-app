@@ -357,21 +357,31 @@ class DatePickerState extends State<DatePicker> {
   }
 
   Future picktime(BuildContext context, int index) async {
+    TimeOfDay tod = TimeOfDay.now();
     TimeOfDay t = await showTimePicker(
       context: context,
-      initialTime: (index != null) ? alarms[index][1] : TimeOfDay.now(),
+      initialTime: (index != null)
+          ? alarms[index][1]
+          : TimeOfDay(
+              hour: tod.hour,
+              minute: (tod.minute == 59) ? tod.minute : tod.minute + 1),
     );
     if (t != null) {
       int l = alarms.length;
       time = t;
       index = l;
-      DateTime st = dt.add(Duration(hours: t.hour, minutes: t.minute));
-      await setReminder();
-      setState(() {
+      DateTime st =
+          dt.add(Duration(hours: t.hour, minutes: t.minute, seconds: 5));
+
+      setState(() async {
+        await setReminder();
         if (st.isAfter(DateTime.now())) {
           _sNotification(st, index);
-          alarms.insert(l, [dt, time, false, counter, reminder]);
-          reminders = generateItems(alarms);
+          if (reminder != null) {
+            alarms.insert(l, [dt, time, false, counter, reminder]);
+            reminder = null;
+            reminders = generateItems(alarms);
+          }
         }
       });
     }
@@ -528,10 +538,16 @@ class DatePickerState extends State<DatePicker> {
 
   editReminder(int index) async {
     await setReminder();
-    alarms[index][4] = reminder;
-    setState(() {
-      reminders = generateItems(alarms);
-    });
+    if (reminder != null) {
+      setState(() {
+        alarms[index][4] = reminder;
+        DateTime st = alarms[index][0].add(Duration(
+            hours: alarms[index][1].hour, minutes: alarms[index][1].minute));
+        fltrNotification.cancel(alarms[index][3]);
+        _sNotification(st, index);
+        reminders = generateItems(alarms);
+      });
+    }
   }
 }
 
